@@ -7,7 +7,7 @@ function readSaved(k){try{return JSON.parse(localStorage.getItem(k)||sessionStor
 function writeSaved(k,v){const data=JSON.stringify(v);try{localStorage.setItem(k,data)}catch{}try{sessionStorage.setItem(k,data)}catch{}}
 let credentials=readSaved(key);
 if(!credentials||typeof credentials.id!=='string')credentials={id:crypto.randomUUID()};
-if(credentials.token)writeSaved(key,credentials);
+writeSaved(key,credentials);
 if(credentials.nick)$('#nick').value=credentials.nick;
 let ws,joined=false,state=null,pendingDigits=null,pendingMode=null,wantJoin=!!credentials.token,round=null;
 const notice=t=>$('#notice').textContent=t;
@@ -48,4 +48,23 @@ $('#guessForm').onsubmit=e=>{e.preventDefault();if($('#submit').disabled)return;
 $('#pass').onclick=()=>{notice('');send({type:'pass',gameId:state.game.id,sequence:state.game.history.length});};
 $('#chatForm').onsubmit=e=>{e.preventDefault();if(!joined)return;send({type:'chat',text:$('#chat').value});$('#chat').value='';};
 $('#copy').onclick=async()=>{try{await navigator.clipboard.writeText(location.href);$('#copy').textContent='복사 완료!';}catch{$('#invite').select();notice('위 초대 링크를 길게 눌러 복사해주세요.');}};
+// Private notes stay on this browser and never enter WebSocket messages.
+const notesKey=key+'-notes-'+credentials.id;
+const notesInput=$('#privateNotes');
+const savedNotes=readSaved(notesKey);
+notesInput.value=typeof savedNotes==='string'?savedNotes.slice(0,5000):'';
+let erasedNotes=null;
+function saveNotes(){
+  const value=notesInput.value;
+  writeSaved(notesKey,value);
+  let persisted=false,temporary=false;
+  try{persisted=localStorage.getItem(notesKey)===JSON.stringify(value)}catch{}
+  try{temporary=sessionStorage.getItem(notesKey)===JSON.stringify(value)}catch{}
+  $('#notesStatus').textContent=persisted?'이 기기에 저장됨':temporary?'이 탭에서만 저장됨':'저장 불가 · 창을 닫으면 사라져요';
+  $('#clearNotes').disabled=!value;
+}
+$('#clearNotes').disabled=!notesInput.value;
+notesInput.addEventListener('input',()=>{erasedNotes=null;$('#undoNotes').classList.add('hidden');saveNotes();});
+$('#clearNotes').onclick=()=>{if(!notesInput.value)return;erasedNotes=notesInput.value;notesInput.value='';saveNotes();$('#undoNotes').classList.remove('hidden');notesInput.focus();};
+$('#undoNotes').onclick=()=>{if(erasedNotes===null)return;notesInput.value=erasedNotes;erasedNotes=null;saveNotes();$('#undoNotes').classList.add('hidden');notesInput.focus();};
 connect();
