@@ -3,15 +3,19 @@ let room=new URLSearchParams(location.search).get('room');
 if(!room){room=crypto.randomUUID();history.replaceState(null,'','?room='+room);}
 $('#invite').value=location.href;
 const key='baseball-'+room;
-let credentials;try{credentials=JSON.parse(sessionStorage.getItem(key));}catch{}
-if(!credentials)credentials={id:crypto.randomUUID()};
-let ws,joined=false,state=null,pendingDigits=4,wantJoin=false,round=null;
+function readSaved(k){try{return JSON.parse(localStorage.getItem(k)||sessionStorage.getItem(k)||'null')}catch{return null}}
+function writeSaved(k,v){const data=JSON.stringify(v);try{localStorage.setItem(k,data)}catch{}try{sessionStorage.setItem(k,data)}catch{}}
+let credentials=readSaved(key);
+if(!credentials||typeof credentials.id!=='string')credentials={id:crypto.randomUUID()};
+if(credentials.token)writeSaved(key,credentials);
+if(credentials.nick)$('#nick').value=credentials.nick;
+let ws,joined=false,state=null,pendingDigits=4,wantJoin=!!credentials.token,round=null;
 const notice=t=>$('#notice').textContent=t;
 function send(m){if(ws?.readyState===1)ws.send(JSON.stringify(m));else notice('구장에 다시 연결 중이에요.');}
 function connect(){
   ws=new WebSocket((location.protocol==='https:'?'wss://':'ws://')+location.host+'/?room='+room);
-  ws.onopen=()=>{$('#join').disabled=joined;if(wantJoin)send({type:'join',...credentials,nick:$('#nick').value});else $('#status').textContent='닉네임을 입력하고 입장하세요.';};
-  ws.onmessage=e=>{const m=JSON.parse(e.data);if(m.type==='joined'){joined=true;wantJoin=true;credentials.token=m.token;sessionStorage.setItem(key,JSON.stringify(credentials));$('#join').disabled=true;}else if(m.type==='error'){notice(m.error);}else if(m.type==='state'){if(!state&&m.host===credentials.id&&!m.game&&m.digits!==pendingDigits)send({type:'config',digits:pendingDigits});render(m);}};
+  ws.onopen=()=>{$('#join').disabled=wantJoin;if(wantJoin)$('#status').textContent='기존 참가자로 복귀 중…';if(wantJoin)send({type:'join',...credentials,nick:$('#nick').value});else $('#status').textContent='닉네임을 입력하고 입장하세요.';};
+  ws.onmessage=e=>{const m=JSON.parse(e.data);if(m.type==='joined'){joined=true;wantJoin=true;credentials.token=m.token;credentials.nick=$('#nick').value;writeSaved(key,credentials);$('#join').disabled=true;}else if(m.type==='error'){notice(m.error);if(!joined)$('#join').disabled=false;}else if(m.type==='state'){if(!state&&m.host===credentials.id&&!m.game&&m.digits!==pendingDigits)send({type:'config',digits:pendingDigits});render(m);}};
   ws.onclose=e=>{$('#join').disabled=true;$('#submit').disabled=true;$('#pass').disabled=true;$('#start').disabled=true;$('#sendChat').disabled=true;if(e.reason==='Reconnected'){notice('다른 창에서 재접속했어요. 이 창은 닫아주세요.');return;}$('#status').textContent=e.code===1008?'초대 링크를 다시 확인해주세요.':'연결이 끊겨 재접속 중…';if(e.code!==1008)setTimeout(connect,2000);};
 }
 function render(m){
