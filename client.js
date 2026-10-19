@@ -1,0 +1,45 @@
+const $=s=>document.querySelector(s);
+let room=new URLSearchParams(location.search).get('room');
+if(!room){room=crypto.randomUUID();history.replaceState(null,'','?room='+room);}
+$('#invite').value=location.href;
+const key='baseball-'+room;
+let credentials;try{credentials=JSON.parse(sessionStorage.getItem(key));}catch{}
+if(!credentials)credentials={id:crypto.randomUUID()};
+let ws,joined=false,state=null,pendingDigits=4,wantJoin=false,round=null;
+const notice=t=>$('#notice').textContent=t;
+function send(m){if(ws?.readyState===1)ws.send(JSON.stringify(m));else notice('구장에 다시 연결 중이에요.');}
+function connect(){
+  ws=new WebSocket((location.protocol==='https:'?'wss://':'ws://')+location.host+'/?room='+room);
+  ws.onopen=()=>{$('#join').disabled=joined;if(wantJoin)send({type:'join',...credentials,nick:$('#nick').value});else $('#status').textContent='닉네임을 입력하고 입장하세요.';};
+  ws.onmessage=e=>{const m=JSON.parse(e.data);if(m.type==='joined'){joined=true;wantJoin=true;credentials.token=m.token;sessionStorage.setItem(key,JSON.stringify(credentials));$('#join').disabled=true;}else if(m.type==='error'){notice(m.error);}else if(m.type==='state'){if(!state&&m.host===credentials.id&&!m.game&&m.digits!==pendingDigits)send({type:'config',digits:pendingDigits});render(m);}};
+  ws.onclose=e=>{$('#join').disabled=true;$('#submit').disabled=true;$('#pass').disabled=true;$('#start').disabled=true;$('#sendChat').disabled=true;if(e.reason==='Reconnected'){notice('다른 창에서 재접속했어요. 이 창은 닫아주세요.');return;}$('#status').textContent=e.code===1008?'초대 링크를 다시 확인해주세요.':'연결이 끊겨 재접속 중…';if(e.code!==1008)setTimeout(connect,2000);};
+}
+function render(m){
+  state=m;const g=m.game,host=m.host===credentials.id,myTurn=!!g&&!g.finished&&g.turn===credentials.id;
+  if(round!==(g?.id||null)){round=g?.id||null;$('#guess').value='';notice('');}
+  $('#digits').value=m.digits;$('#digits').disabled=!host||!!g;$('#guess').maxLength=m.digits;$('#guess').placeholder=`숫자 ${m.digits}자리`;
+  $('#start').disabled=!host||!!g||m.members.filter(p=>p.online).length<2;
+  $('#chat').disabled=!joined;$('#sendChat').disabled=!joined;$('#guess').disabled=!myTurn;$('#submit').disabled=!myTurn;$('#pass').disabled=!myTurn;
+  $('#status').textContent=(g?g.finished?'경기 종료':'경기 중':'대기실')+' · '+m.members.filter(p=>p.online).length+'/4명'+(host?' · 내가 방장입니다':' · 방장이 경기를 준비합니다');
+  $('#inning').textContent=g?g.finished?'HOME RUN!':'TURN '+(g.history.length+1):'WAITING ROOM';
+  $('#secret').replaceChildren(...Array.from({length:m.digits},(_,i)=>{const el=document.createElement('span');el.textContent=g?.answer?.[i]||'?';return el;}));
+  $('#players').replaceChildren(...m.members.map((p,i)=>{const el=document.createElement('div');el.className='player'+(g&&!g.finished&&g.turn===p.id?' active':'');const num=document.createElement('span');num.className='jersey';num.textContent=String(i+1).padStart(2,'0');const name=document.createElement('strong');name.textContent=p.nick+(p.id===credentials.id?' (나)':'');const info=document.createElement('small');info.textContent=!p.online?'연결 끊김':p.id===m.host?'방장 · 접속 중':'접속 중';el.append(num,name,info);return el;}));
+  const player=m.members.find(p=>p.id===g?.turn);
+  $('#turn').textContent=!g?'선수들의 입장을 기다립니다':g.finished?'홈런! 경기가 끝났습니다':myTurn?'내 차례 · 타석에 입장!':(player?.nick||'선수')+'의 타석';
+  $('#turnHelp').textContent=!g?'2명 이상 입장하면 방장이 경기를 시작할 수 있어요.':g.finished?'아래 결과를 확인하고 다음 경기를 준비하세요.':myTurn?'시간제한 없이 생각하세요. 준비되면 스윙!':'공개 기록을 보며 다음 추측을 준비하세요. 시간제한은 없어요.';
+  $('#victory').classList.toggle('hidden',!g?.finished);$('#winner').textContent=g?.finished?(m.members.find(p=>p.id===g.winner)?.nick||'선수')+' 승리!':'';
+  $('#rematch').classList.toggle('hidden',!host);$('#lobby').classList.toggle('hidden',!host);
+  const hist=g?.history||[];$('#attempts').textContent=hist.filter(x=>!x.pass).length+'회';$('#empty').classList.toggle('hidden',!!hist.length);$('#historyTable').classList.toggle('hidden',!hist.length);
+  $('#history').replaceChildren(...hist.map((h,i)=>{const tr=document.createElement('tr');for(const text of [i+1,h.nick,h.pass?'—':h.guess]){const td=document.createElement('td');td.textContent=text;tr.append(td);}const result=document.createElement('td');if(h.pass)result.textContent='차례 넘김';else{for(const [text,color]of(h.strikes||h.balls?[[h.strikes+' S','s'],[h.balls+' B','b']]:[['OUT','o']])){const badge=document.createElement('span');badge.className='pill '+color;badge.textContent=text;result.append(badge);}}tr.append(result);return tr;}).reverse());
+  const log=$('#chatlog'),nearBottom=log.scrollHeight-log.scrollTop-log.clientHeight<60;
+  log.replaceChildren(...m.chat.map(c=>{const div=document.createElement('div');div.className='message';const nick=document.createElement('b');nick.textContent=c.nick;const text=document.createElement('span');text.textContent=c.text;div.append(nick,text);return div;}));if(nearBottom)log.scrollTop=log.scrollHeight;
+}
+$('#join').onclick=()=>{if(!$('#nick').value.trim()){$('#nick').focus();notice('닉네임을 입력해주세요.');return;}send({type:'join',...credentials,nick:$('#nick').value});};
+$('#nick').onkeydown=e=>{if(e.key==='Enter'&&!$('#join').disabled)$('#join').click();};
+$('#digits').onchange=()=>{pendingDigits=Number($('#digits').value);if(joined)send({type:'config',digits:pendingDigits});else{$('#guess').placeholder=`숫자 ${pendingDigits}자리`;$('#secret').replaceChildren(...Array.from({length:pendingDigits},()=>{const el=document.createElement('span');el.textContent='?';return el;}));}};
+$('#start').onclick=()=>send({type:'start'});$('#rematch').onclick=()=>send({type:'rematch'});$('#lobby').onclick=()=>send({type:'lobby'});
+$('#guessForm').onsubmit=e=>{e.preventDefault();if($('#submit').disabled)return;const value=$('#guess').value.trim(),digits=state.digits;if(!new RegExp('^[1-9][0-9]{'+(digits-1)+'}$').test(value)||new Set(value).size!==digits){notice(`중복 없는 ${digits}자리 숫자를 입력하세요. 첫 자리는 0이 아니에요.`);return;}notice('');send({type:'guess',value,gameId:state.game.id,sequence:state.game.history.length});$('#guess').value='';};
+$('#pass').onclick=()=>{notice('');send({type:'pass',gameId:state.game.id,sequence:state.game.history.length});};
+$('#chatForm').onsubmit=e=>{e.preventDefault();if(!joined)return;send({type:'chat',text:$('#chat').value});$('#chat').value='';};
+$('#copy').onclick=async()=>{try{await navigator.clipboard.writeText(location.href);$('#copy').textContent='복사 완료!';}catch{$('#invite').select();notice('위 초대 링크를 길게 눌러 복사해주세요.');}};
+connect();
