@@ -1,3 +1,12 @@
+// Application heartbeat also works through proxies that answer protocol pings.
+function attachClientHeartbeat(socket) {
+  let lastSeen=Date.now();
+  const beat=()=>{if(Date.now()-lastSeen>60000){socket.close();return;}if(socket.readyState===1)socket.send(JSON.stringify({type:'heartbeat'}));};
+  socket.addEventListener('open',()=>{lastSeen=Date.now();beat();});
+  socket.addEventListener('message',()=>{lastSeen=Date.now();});
+  const timer=setInterval(beat,20000);
+  socket.addEventListener('close',()=>clearInterval(timer),{once:true});
+}
 const $=s=>document.querySelector(s);
 let room=new URLSearchParams(location.search).get('room');
 if(!room){room=crypto.randomUUID();history.replaceState(null,'','?room='+room);}
@@ -13,7 +22,7 @@ let ws,joined=false,state=null,pendingDigits=null,pendingMode=null,wantJoin=!!cr
 const notice=t=>$('#notice').textContent=t;
 function send(m){if(ws?.readyState===1)ws.send(JSON.stringify(m));else notice('구장에 다시 연결 중이에요.');}
 function connect(){
-  ws=new WebSocket((location.protocol==='https:'?'wss://':'ws://')+location.host+'/?room='+room);
+  ws=new WebSocket((location.protocol==='https:'?'wss://':'ws://')+location.host+'/?room='+room);attachClientHeartbeat(ws);
   ws.onopen=()=>{$('#join').disabled=wantJoin;if(wantJoin)$('#status').textContent='기존 참가자로 복귀 중…';if(wantJoin)send({type:'join',...credentials,nick:$('#nick').value});else $('#status').textContent='닉네임을 입력하고 입장하세요.';};
   ws.onmessage=e=>{const m=JSON.parse(e.data);if(m.type==='joined'){joined=true;wantJoin=true;credentials.token=m.token;credentials.nick=$('#nick').value;writeSaved(key,credentials);$('#join').disabled=true;}else if(m.type==='error'){notice(m.error);if(!joined)$('#join').disabled=false;}else if(m.type==='state'){if(!state&&m.host===credentials.id&&!m.game&&(pendingDigits!==null||pendingMode!==null))send({type:'config',...(pendingDigits!==null?{digits:pendingDigits}:{}),...(pendingMode!==null?{mode:pendingMode}:{})});render(m);}};
   ws.onclose=e=>{$('#join').disabled=true;$('#submit').disabled=true;$('#pass').disabled=true;$('#start').disabled=true;$('#sendChat').disabled=true;if(e.reason==='Reconnected'){notice('다른 창에서 재접속했어요. 이 창은 닫아주세요.');return;}$('#status').textContent=e.code===1008?'초대 링크를 다시 확인해주세요.':'연결이 끊겨 재접속 중…';if(e.code!==1008)setTimeout(connect,2000);};

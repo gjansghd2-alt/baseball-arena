@@ -13,3 +13,12 @@ test('heartbeat preserves responsive sockets, terminates silent peers, isolates 
   t.mock.timers.tick(30);assert.equal(alive.dead,false);assert.equal(silent.dead,true);
   wss.emit('close');t.mock.timers.tick(60);assert.equal(alive.pings,2);
 });
+
+test('application silence expires even if an intermediary answers protocol pings', t => {
+  t.mock.timers.enable({apis:['setInterval']});
+  const wss=new EventEmitter();wss.clients=new Set();let now=0;
+  const ws=Object.assign(new EventEmitter(),{readyState:1,ping(){this.emit('pong');},terminate(){this.dead=true;}});
+  wss.clients.add(ws);attachHeartbeat(wss,30,()=>now);wss.emit('connection',ws);
+  now=80000;ws.emit('message');t.mock.timers.tick(30);assert.ok(!ws.dead);
+  now=171000;t.mock.timers.tick(30);assert.equal(ws.dead,true);wss.emit('close');
+});

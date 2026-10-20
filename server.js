@@ -35,7 +35,7 @@ wss.on('connection',(ws,req)=>{
   r.clients.add(ws);
   ws.on('message',raw=>{try{
     const now=Date.now();if(now-(ws.window||0)>1000){ws.window=now;ws.count=0;}if(++ws.count>20)throw Error('잠시 후 다시 시도하세요.');
-    const m=JSON.parse(raw);
+    const m=JSON.parse(raw);if(m?.type==='heartbeat'){send(ws,{type:'heartbeat'});return;}
     if(m.type==='join'){
       if(ws.pid)throw Error('이미 입장했어요.');
       if(typeof m.id!=='string'||!/^[\w-]{16,80}$/.test(m.id))throw Error('잘못된 참가자입니다.');
