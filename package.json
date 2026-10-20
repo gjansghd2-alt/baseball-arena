@@ -1,1 +1,1 @@
-{"name":"baseball-arena","version":"1.0.0","type":"module","scripts":{"start":"node server.js","test":"node --test logic.test.js judgement.test.js"},"engines":{"node":">=20"},"dependencies":{"ws":"^8.18.0"}}
+{"name": "baseball-arena", "version": "1.0.0", "type": "module", "scripts": {"start": "node server.js", "test": "node --test logic.test.js judgement.test.js heartbeat.test.js"}, "engines": {"node": ">=20"}, "dependencies": {"ws": "^8.18.0"}}

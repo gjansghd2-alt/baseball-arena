@@ -1,3 +1,4 @@
+import {attachHeartbeat} from './heartbeat.js';
 import http from 'node:http';
 import fs from 'node:fs/promises';
 import { randomUUID } from 'node:crypto';
@@ -12,7 +13,7 @@ const server=http.createServer(async(req,res)=>{
   if(!files[p]){res.writeHead(404).end();return;}
   try{const data=await fs.readFile(new URL(files[p],import.meta.url));res.setHeader('Content-Type',p.endsWith('.js')?'application/javascript':p.endsWith('.css')?'text/css':'text/html; charset=utf-8');res.setHeader('X-Content-Type-Options','nosniff');res.setHeader('Cache-Control','no-cache');res.end(data);}catch{res.writeHead(500).end();}
 });
-const wss=new WebSocketServer({server,maxPayload:4096});
+const wss=new WebSocketServer({server,maxPayload:4096});attachHeartbeat(wss);
 const send=(ws,data)=>{if(ws.readyState===1)ws.send(JSON.stringify(data));};
 const online=(r,id)=>[...r.clients].some(c=>c.pid===id&&c.readyState===1);
 function broadcast(r){
